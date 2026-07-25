@@ -44,3 +44,12 @@ compile_commands.json
 
 # Build directories
 *build*
+
+# SymAFL local build trees and CMake/Ninja artifacts
+/32libcxx_symcc/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/build.ninja
+**/.ninja_deps
+**/.ninja_log
