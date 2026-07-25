@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with Sy
 
 ## Scope and Ownership Boundary
 
-This subtree contains upstream-style SymCC compiler and runtime sources. **The compiler pass used by SymAFL-built targets is not the standalone pass here**: it is integrated into the RSan LLVM CodeGen tree at `../RSan/llvm-project-16/llvm/lib/CodeGen/SymCC/`. Make target-instrumentation or pass-pipeline changes there; see [`../RSan/CLAUDE.md`](../RSan/CLAUDE.md).
+This subtree contains upstream-style SymCC compiler sources plus the **vendored** runtime: `runtime/` holds the full symcc-rt tree (QSYM/Simple backends, libc wrappers, shadow memory) and `runtime/src/backends/qsym/qsym/` holds the qsym solver sources. Both were flattened into this repository (2026-07) so the whole symbolic execution layer is versioned atomically — there are no nested submodules. Excluded during flattening: `third_party/z3` (the build links system Z3 via `Z3_TRUST_SYSTEM_VERSION=ON`) and the 200MB Intel Pin toolchain under `third_party/` (only needed for standalone qsym pintool builds; fetch from `eurecom-s3/qsym` if ever required). Provenance: symcc-rt @ `892f817`, qsym @ `ccd2f41`, plus SymAFL changes (see the vendoring commit message).
 
 This subtree owns runtime ABI/shared state, libc wrappers, shadow memory, and the QSYM/Simple backends. AFL++ PCBT pre-screening and its trace-consumption rules are documented in [`../AFLplusplus/CLAUDE.md`](../AFLplusplus/CLAUDE.md).
 
