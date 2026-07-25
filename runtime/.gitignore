@@ -42,5 +42,6 @@ compile_commands.json
 .clangd
 .cache
 
-# Build directories
-build*
+# Build directories (trailing slash: directories only — bare build*
+# also matches source files like tests/build.py and silently drops them)
+build*/

@@ -42,8 +42,9 @@ compile_commands.json
 .clangd
 .cache
 
-# Build directories
-*build*
+# Build directories (trailing slash: directories only — a bare *build* also
+# matches source files like expr_builder.cpp and silently drops them)
+*build*/
 
 # SymAFL local build trees and CMake/Ninja artifacts
 /32libcxx_symcc/
