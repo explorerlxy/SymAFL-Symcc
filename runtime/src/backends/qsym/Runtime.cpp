@@ -98,6 +98,7 @@ extern "C" {
 #define SHM_OUT_DIR_ENV_VAR                         "__AFL_SHM_OUTDIR_ENV_ID"
 #define SHM_QUEUE_ENTRY_ID_ENV_VAR                  "__AFL_SHM_QUEUE_ENTRY_ID"
 #define SHM_INSERT_DEPTH_ENV_VAR                    "__AFL_SHM_INSERT_DEPTH__ID"
+#define SHM_DUMP_TRACE_ENV_VAR                      "__AFL_SHM_DUMP_TRACE_ID"
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -120,6 +121,12 @@ u8* __out_dir = __afl_area_initial;
 u32* __queue_entry_id = NULL;
 u32* __insert_depth = NULL;
 s32* __symbolic = NULL;
+/* P3: when attached and 0, save_solver_to_file() skips the .pct dump on
+   normal exits. AFL sets it to 0 for screening executions (their traces are
+   only needed if they gain coverage) and to 1 for replayed gaining
+   executions, dry runs, and sync imports. NULL (unattached) keeps the
+   legacy behavior of always dumping. Crash/signal exits always dump. */
+u8* __dump_trace = NULL;
 
 __thread u32 __afl_prev_loc = 0;
 
@@ -230,6 +237,21 @@ static void __afl_insert_depth_shm(void) {
   // }
 }
 
+static void __afl_dump_trace_shm(void) {
+
+  char *id_str = getenv(SHM_DUMP_TRACE_ENV_VAR);
+
+  if (id_str) {
+
+    u32 shm_id = atoi(id_str);
+
+    __dump_trace = (u8*)shmat(shm_id, NULL, 0);
+
+    if (__dump_trace == (void *)-1) _exit(1);
+
+  }
+}
+
 static void reset_gconfig(void) {
 
   char *id_str = getenv(SHM_SYMBOLIC_ENV_VAR);
@@ -321,6 +343,7 @@ void __afl_manual_init(void) {
     __afl_queue_entry_id_shm();
     __afl_symbolic_id_shm();
     __afl_insert_depth_shm();
+    __afl_dump_trace_shm();
     __afl_out_dir_shm();
     __afl_start_forkserver();
     init_done = 1;
@@ -453,15 +476,27 @@ void save_solver_to_file() {
     if(__symbolic == NULL || *__symbolic == 0)
       return;
 
+    /* P3: trace-time work is pure qsym-side bookkeeping (Solver::addJcc ->
+       traceConstraint); Z3 materialization and SMT-LIB serialization only
+       happen here, at dump time. AFL gates the dump via __dump_trace so
+       screening executions that gain no coverage never pay for it. */
+    if(__dump_trace != NULL && *__dump_trace == 0)
+      return;
+
     std::ostringstream oss, smt2_str;
     oss << std::setw(6) << std::setfill('0') << *__queue_entry_id;
     std::string filename = string((char *)__out_dir) + "/queue/.pct-" + oss.str();
-    // Convert the solver state to an SMT-LIB formatted string
-    // std::string smt2_str = qsym::g_solver->getSolver().to_smt2();
-    z3::expr_vector asserts = qsym::g_solver->getSolver().assertions();
-    for(uint32_t i = *__insert_depth; i < asserts.size(); i++){
-      smt2_str << "(assert " << asserts[i].to_string() <<  ")\n";
-    } 
+    // Serialize the lazily recorded constraints, starting at *__insert_depth.
+    const auto &traced = qsym::g_solver->getTracedConstraints();
+    std::unordered_set<unsigned> dumped_ids;
+    uint32_t insert_depth = (__insert_depth != NULL) ? *__insert_depth : 0;
+    for(uint32_t i = insert_depth; i < traced.size(); i++){
+      z3::expr e = traced[i]->toZ3Expr();
+      // Exact dedup over the dumped suffix (Z3 hash-conses AST nodes).
+      if(!dumped_ids.insert(e.id()).second)
+        continue;
+      smt2_str << "(assert " << e.to_string() <<  ")\n";
+    }
 
     // Write the SMT-LIB string to a file
     std::ofstream file(filename);
@@ -476,7 +511,12 @@ void save_solver_to_file() {
 
 
 void signal_handler(int sig) {
+    /* Crash exits always dump the trace (needed for vulnerability-to-path
+       binding), regardless of the __dump_trace gate. */
+    u8 *saved_dump_trace = __dump_trace;
+    __dump_trace = NULL;
     save_solver_to_file();
+    __dump_trace = saved_dump_trace;
     signal(sig, SIG_DFL);
     raise(sig);
 }

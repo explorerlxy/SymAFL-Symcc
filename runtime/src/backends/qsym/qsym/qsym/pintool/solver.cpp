@@ -126,6 +126,15 @@ void Solver::addIfUnique(z3::expr e) {
   solver.add(e);
   constraint_set.insert(e_id);
 }
+
+void Solver::traceConstraint(const ExprRef &e) {
+  // P3: pure bookkeeping, no Z3. hash() is the memoized structural XXH32
+  // maintained by Expr, so this is O(1) per branch after the first call.
+  uint32_t h = e->hash();
+  if (!traced_hash_set_.insert(h).second)
+    return;
+  traced_constraints_.push_back(e);
+}
 void Solver::push() {
   solver_.push();
 }
@@ -207,7 +216,10 @@ void Solver::addJcc(ExprRef e, bool taken, ADDRINT pc) {
     e->simplify();
   if (!taken)
     e = g_expr_builder->createLNot(e);
-  addIfUnique(e->toZ3Expr());
+  // P3: record the constraint lazily; Z3 materialization and serialization
+  // are deferred to trace-dump time (and skipped entirely when AFL disables
+  // the dump for executions that gain no coverage).
+  traceConstraint(e);
 
   // if (is_interesting)
   //   negatePath(e, taken);

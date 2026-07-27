@@ -36,6 +36,18 @@ public:
   z3::context& getContext();
   void addIfUnique(z3::expr e);
 
+  // P3: lazily record branch constraints without any Z3 interaction. The
+  // vector holds unique constraints in first-occurrence order, preserving
+  // the index semantics that *__insert_depth relies on. Materialization to
+  // Z3 and SMT-LIB serialization only happen at trace-dump time (see
+  // save_solver_to_file() in the qsym backend Runtime.cpp), and the dump
+  // itself is gated by AFL via the __AFL_SHM_DUMP_TRACE_ID channel, so
+  // screening executions that turn out not to gain coverage never touch Z3.
+  void traceConstraint(const ExprRef &e);
+  const std::vector<ExprRef> &getTracedConstraints() const {
+    return traced_constraints_;
+  }
+
   void push();
   void reset();
   void pop();
@@ -70,6 +82,11 @@ protected:
   ADDRINT               last_pc_;
   DependencyForest<Expr> dep_forest_;
   std::unordered_set<unsigned>   constraint_set;  // P1: Z3 AST ids (hash-consed), was SMT-LIB strings
+  // P3: lazy trace state. Dedup uses the memoized structural XXH32 of each
+  // Expr; a 32-bit collision can drop one unique constraint (acceptable for
+  // a fuzzing heuristic; exact dedup happens again via Z3 AST ids at dump).
+  std::vector<ExprRef>        traced_constraints_;
+  std::unordered_set<uint32_t> traced_hash_set_;
 
   void checkOutDir();
   void readInput();
