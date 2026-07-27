@@ -201,7 +201,10 @@ void Solver::addJcc(ExprRef e, bool taken, ADDRINT pc) {
   else
     is_interesting = isInterestingJcc(e, taken, pc);
 
-  e->simplify();
+  // P2: eager materialization+simplification of the whole subtree per branch
+  // is only useful when simplify-on-materialize is enabled.
+  if (simplifyOnMaterialize())
+    e->simplify();
   if (!taken)
     e = g_expr_builder->createLNot(e);
   addIfUnique(e->toZ3Expr());

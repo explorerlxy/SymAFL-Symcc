@@ -8,6 +8,9 @@
 #include <set>
 #include <sstream>
 #include <vector>
+#include <cstdlib>
+#include <cstring>
+#include <strings.h>
 
 #include <z3++.h>
 
@@ -19,6 +22,23 @@
 namespace qsym {
 
 extern z3::context *g_z3_context;
+
+// P2: whether to run the Z3 simplifier when a qsym expression is first
+// materialized to a z3::expr (toZ3Expr()). Eager simplification costs ~10%
+// of concolic CPU and is unnecessary for SymAFL's pure-tracing mode: no
+// solving happens in the target process and the fuzzer-side PCBT re-parses
+// (and can simplify) constraints itself. Opt back in with
+// SYMCC_SIMPLIFY_ON_MATERIALIZE=1 (accepted: 1/on/yes, case-insensitive).
+inline bool simplifyOnMaterialize() {
+  static const bool enabled = [] {
+    const char *v = getenv("SYMCC_SIMPLIFY_ON_MATERIALIZE");
+    if (v == nullptr)
+      return false;
+    return strcmp(v, "1") == 0 || strcasecmp(v, "on") == 0 ||
+           strcasecmp(v, "yes") == 0;
+  }();
+  return enabled;
+}
 
 const INT32 kMaxDepth = 100;
 
@@ -204,11 +224,16 @@ class Expr : public DependencyNode {
 
     z3::expr& toZ3Expr(bool verbose=false) {
       if (expr_ == NULL) {
-        //创建z3::expr时就进行简化
-        z3::params p(context_);
-        p.set(":pp.min-alias-size", (uint32_t)3);
-        p.set(":pp.flat", true);
-        z3::expr z3_expr = toZ3ExprRecursively(verbose).simplify(p);
+        z3::expr z3_expr = toZ3ExprRecursively(verbose);
+        // P2: skip the eager Z3 simplification unless explicitly requested;
+        // note that the pp.* params below only affected pretty-printing of
+        // the simplified form, not the simplification itself.
+        if (simplifyOnMaterialize()) {
+          z3::params p(context_);
+          p.set(":pp.min-alias-size", (uint32_t)3);
+          p.set(":pp.flat", true);
+          z3_expr = z3_expr.simplify(p);
+        }
         expr_ = new z3::expr(z3_expr);
       }
       return *expr_;
