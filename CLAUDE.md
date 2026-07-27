@@ -41,6 +41,7 @@ QSYM is the intended SymAFL backend. In addition to symbolic expression construc
 | `__AFL_SHM_SYMBOLIC_ENV_ID` | `__symbolic` | Concrete/symbolic mode |
 | `__AFL_SHM_QUEUE_ENTRY_ID` | `__queue_entry_id` | Current queue entry |
 | `__AFL_SHM_INSERT_DEPTH__ID` | `__insert_depth` | First new constraint to persist; spelling is intentional |
+| `__AFL_SHM_DUMP_TRACE_ID` | `__dump_trace` | `.pct` dump gate: `0` skips dumping on normal exits |
 
 Before every fork, `reset_gconfig()` reads `*__symbolic`:
 
@@ -49,7 +50,7 @@ Before every fork, `reset_gconfig()` reads `*__symbolic`:
 
 Changing only `g_config.input` is insufficient because `LibcWrappers.cpp` uses `inputFileDescriptor` to decide whether `read_symbolized()` creates symbolic values.
 
-On relevant exits/signals, QSYM persists solver assertions beginning at `*__insert_depth` as `queue/.pct-<queue-entry-id>`. Keep that format and naming synchronized with the PCBT insertion code in AFL++.
+Branch constraints are recorded lazily during tracing (`Solver::traceConstraint`, no Z3 interaction); Z3 materialization and SMT-LIB serialization happen only at dump time. On relevant exits, QSYM persists traced constraints beginning at `*__insert_depth` as `queue/.pct-<queue-entry-id>`, unless the dump gate (`__dump_trace`) is attached and `0`. Signal/crash exits always dump. Keep that format and naming synchronized with the PCBT insertion code in AFL++.
 
 ### Simple backend
 
