@@ -69,7 +69,7 @@ protected:
   uint64_t              solving_time_;
   ADDRINT               last_pc_;
   DependencyForest<Expr> dep_forest_;
-  std::unordered_set<std::string> constraint_set;
+  std::unordered_set<unsigned>   constraint_set;  // P1: Z3 AST ids (hash-consed), was SMT-LIB strings
 
   void checkOutDir();
   void readInput();

@@ -117,10 +117,14 @@ z3::context &Solver::getContext() {
 }
 
 void Solver::addIfUnique(z3::expr e) {
-  string e_str = e.to_string();
-  if (constraint_set.count(e_str)) return ;
+  // P1: deduplicate by Z3 AST id instead of rendering the entire constraint
+  // to an SMT-LIB string on every symbolic branch. Z3 hash-conses AST nodes
+  // within a context, so identical (post-simplification) constraints share an
+  // id; id equality matches the previous string equality at O(1) cost.
+  unsigned e_id = e.id();
+  if (constraint_set.count(e_id)) return ;
   solver.add(e);
-  constraint_set.insert(e_str);
+  constraint_set.insert(e_id);
 }
 void Solver::push() {
   solver_.push();
