@@ -434,19 +434,33 @@ SymExpr _sym_build_mul_overflow(SymExpr a, SymExpr b, bool is_signed,
 
 SymExpr _sym_build_funnel_shift_left(SymExpr a, SymExpr b, SymExpr c) {
   size_t bits = _sym_bits_helper(c);
+  // fshl(a, b, c) = (a << (c % bits)) | (b >> (bits - c % bits)).
+  // With X = concat(a, b) (a high, b low, 2*bits wide), this is the top
+  // `bits` bits of X << (c % bits).
   SymExpr concat = _sym_concat_helper(a, b);
   SymExpr shift = _sym_build_unsigned_rem(c, _sym_build_integer(bits, bits));
-
-  return _sym_extract_helper(_sym_build_shift_left(concat, shift), 0, bits);
+  // P6: the shift amount must be widened to the 2*bits concatenation (a
+  // 32-bit funnel shift previously crashed QSYM's width assertion with a
+  // 64-bit concat and a 32-bit shift amount).
+  shift = _sym_build_zext(shift, bits);
+  // P6: extract the TOP bits [2*bits-1 : bits]; the old code extracted
+  // [0 : bits] which produced an invalid negative-width extract.
+  return _sym_extract_helper(_sym_build_shift_left(concat, shift),
+                             2 * bits - 1, bits);
 }
 
 SymExpr _sym_build_funnel_shift_right(SymExpr a, SymExpr b, SymExpr c) {
   size_t bits = _sym_bits_helper(c);
-  SymExpr concat = _sym_concat_helper(a, b);
+  // fshr(a, b, c) = (a >> (c % bits)) | (b << (bits - c % bits)).
+  // With X = concat(b, a) (b high, a low), this is the LOW `bits` bits of
+  // X >> (c % bits). The old code concatenated (a, b) and extracted
+  // [0 : bits], which was both the wrong operand order and an invalid
+  // negative-width extract.
+  SymExpr concat = _sym_concat_helper(b, a);
   SymExpr shift = _sym_build_unsigned_rem(c, _sym_build_integer(bits, bits));
-
-  return _sym_extract_helper(_sym_build_logical_shift_right(concat, shift), 0,
-                             bits);
+  shift = _sym_build_zext(shift, bits);
+  return _sym_extract_helper(_sym_build_logical_shift_right(concat, shift),
+                             bits - 1, 0);
 }
 
 SymExpr _sym_build_abs(SymExpr expr) {
